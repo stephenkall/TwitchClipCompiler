@@ -1,5 +1,6 @@
 TwitchClipCompiler.code-workspace
 videolist.txt
+.claude/
 clips/
 *.mp4
 .cache/
