@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run / Debug",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/compiler.py",
+      "args": [],
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ]
+}

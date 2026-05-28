@@ -2,6 +2,7 @@ TwitchClipCompiler.code-workspace
 videolist.txt
 clips/
 *.mp4
+.cache/
 __pycache__/
 *.py[cod]
 .pytest_cache/

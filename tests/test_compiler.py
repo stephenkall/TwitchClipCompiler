@@ -137,6 +137,29 @@ class TestSortClipsChronologically:
         assert [r[1]["upload_date"] for r in result] == ["20240315", "20240315"]
 
 
+# ── worker_count ─────────────────────────────────────────────────────────────
+
+class TestWorkerCount:
+    def test_override_respected(self):
+        assert compiler.worker_count(override=2) == 2
+
+    def test_override_capped_at_cpu_count(self):
+        with mock.patch("os.cpu_count", return_value=4):
+            assert compiler.worker_count(override=100) == 4
+
+    def test_default_is_75_percent_of_cores(self):
+        with mock.patch("os.cpu_count", return_value=8):
+            assert compiler.worker_count() == 6  # floor(8 * 0.75)
+
+    def test_minimum_one_worker(self):
+        with mock.patch("os.cpu_count", return_value=1):
+            assert compiler.worker_count() >= 1
+
+    def test_none_cpu_count_defaults_to_one(self):
+        with mock.patch("os.cpu_count", return_value=None):
+            assert compiler.worker_count() >= 1
+
+
 # ── get_video_duration ────────────────────────────────────────────────────────
 
 class TestGetVideoDuration:
@@ -211,6 +234,16 @@ class TestProcessClip:
         vf_idx = cmd.index("-vf") + 1
         assert "drawtext" in cmd[vf_idx]
         assert "scale=" in cmd[vf_idx]
+
+    def test_no_cache_reprocesses_existing_output(self, tmp_path):
+        inp = tmp_path / "input.mp4"
+        inp.touch()
+        out = tmp_path / "output.mp4"
+        out.touch()  # Already exists
+
+        with mock.patch("subprocess.run") as mock_run:
+            compiler.process_clip(inp, out, "Title", "20240315", no_cache=True)
+        mock_run.assert_called_once()  # Should call ffmpeg despite existing output
 
     def test_date_none_handled(self, tmp_path):
         inp = tmp_path / "input.mp4"
