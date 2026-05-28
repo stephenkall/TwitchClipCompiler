@@ -71,7 +71,11 @@ videolist.txt
 [Sort]                      Clips ordered oldest → newest by upload date
      │
      ▼
-[Phase 2] Process           ffmpeg normalizes to 1280×720 @ 30fps,
+[Detect format]             ffprobe probes all clips; picks best standard
+     │                      tier ≤ source quality (target: 1080p60)
+     │
+     ▼
+[Phase 2] Process           ffmpeg normalizes to detected format,
      │                      adds title + date overlay for first 2 seconds
      │                      (runs in parallel across CPU cores)
      ▼
@@ -81,12 +85,20 @@ videolist.txt
 
 ### Output format
 
-- Resolution: 1280×720
-- Frame rate: 30 fps
-- Video codec: H.264 (libx264, CRF 23)
-- Audio codec: AAC 128 kbps, 44.1 kHz stereo
-- Transitions: 0.5s fade between clips
-- Title overlay: clip name + upload date, displayed for 2 seconds at the top of each clip
+Resolution and frame rate are detected automatically from the source clips, targeting the best standard tier available:
+
+| Source clips | Output |
+|---|---|
+| 1080p60 | 1920×1080 @ 60 fps |
+| 720p60 | 1280×720 @ 60 fps |
+| 720p30 | 1280×720 @ 30 fps |
+| Mixed (e.g. 720p + 1080p) | 1920×1080 @ 60 fps |
+| Above 1080p (e.g. 4K) | 1920×1080 @ 60 fps (capped) |
+
+- **Video codec:** H.264 (libx264, CRF 23)
+- **Audio codec:** AAC 128 kbps, 44.1 kHz stereo
+- **Transitions:** 0.5s crossfade between clips
+- **Title overlay:** clip name + upload date, displayed for 2 seconds at the top of each clip
 
 ### Caching
 
