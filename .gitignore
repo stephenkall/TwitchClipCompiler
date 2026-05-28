@@ -7,3 +7,4 @@ clips/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+CLAUDE.md
