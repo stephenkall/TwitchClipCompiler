@@ -283,6 +283,24 @@ def build_compilation(processed_clips: list[Path], output_file: Path) -> None:
         os.unlink(filter_script)
 
 
+def sort_clips_chronologically(
+    clip_data: list[tuple[Path, dict]],
+) -> list[tuple[Path, dict]]:
+    """
+    Return clip_data sorted oldest-first by upload_date (YYYYMMDD).
+    Clips with a missing or malformed date are placed at the end.
+    """
+    def sort_key(item: tuple[Path, dict]) -> str:
+        date = item[1].get("upload_date", "") or ""
+        # Valid YYYYMMDD sorts lexicographically == chronologically.
+        # Anything else (empty, malformed) is pushed to the end.
+        if len(date) == 8 and date.isdigit():
+            return date
+        return "99999999"
+
+    return sorted(clip_data, key=sort_key)
+
+
 def load_urls(videolist_path: Path) -> list[str]:
     """Parse HTTP/HTTPS URLs from a text file (one per line, ignores comments)."""
     urls: list[str] = []
@@ -335,6 +353,13 @@ def main() -> None:
                 if url in all_meta:
                     m = all_meta[url]
                     clip_data.append((Path(m["path"]), m))
+
+    # Sort by upload date before processing so the compilation is chronological.
+    clip_data = sort_clips_chronologically(clip_data)
+    if clip_data:
+        first_date = clip_data[0][1].get("upload_date", "?")
+        last_date = clip_data[-1][1].get("upload_date", "?")
+        print(f"[*] Clips sorted chronologically: {format_date(first_date)} → {format_date(last_date)}")
 
     # ── Phase 2: Process ──────────────────────────────────────────────────────
     processed_clips: list[Path] = []

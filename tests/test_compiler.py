@@ -91,6 +91,52 @@ class TestLoadUrls:
         assert len(compiler.load_urls(f)) == 1
 
 
+# ── sort_clips_chronologically ───────────────────────────────────────────────
+
+class TestSortClipsChronologically:
+    def _make(self, date: str) -> tuple[Path, dict]:
+        return Path(f"clip_{date}.mp4"), {"upload_date": date, "title": f"Clip {date}"}
+
+    def test_sorts_oldest_first(self):
+        clips = [self._make("20240315"), self._make("20230101"), self._make("20240101")]
+        result = compiler.sort_clips_chronologically(clips)
+        dates = [r[1]["upload_date"] for r in result]
+        assert dates == ["20230101", "20240101", "20240315"]
+
+    def test_already_sorted_unchanged(self):
+        clips = [self._make("20230101"), self._make("20230601"), self._make("20240101")]
+        result = compiler.sort_clips_chronologically(clips)
+        dates = [r[1]["upload_date"] for r in result]
+        assert dates == ["20230101", "20230601", "20240101"]
+
+    def test_missing_date_goes_to_end(self):
+        clips = [self._make(""), self._make("20240315"), self._make("20230101")]
+        result = compiler.sort_clips_chronologically(clips)
+        dates = [r[1]["upload_date"] for r in result]
+        assert dates == ["20230101", "20240315", ""]
+
+    def test_none_date_goes_to_end(self):
+        clips = [
+            (Path("clip_no_date.mp4"), {"upload_date": None, "title": "no date"}),
+            self._make("20240315"),
+        ]
+        result = compiler.sort_clips_chronologically(clips)
+        assert result[0][1]["upload_date"] == "20240315"
+
+    def test_empty_list_returns_empty(self):
+        assert compiler.sort_clips_chronologically([]) == []
+
+    def test_single_clip_unchanged(self):
+        clips = [self._make("20240315")]
+        result = compiler.sort_clips_chronologically(clips)
+        assert result == clips
+
+    def test_same_date_preserves_relative_order(self):
+        clips = [self._make("20240315"), self._make("20240315")]
+        result = compiler.sort_clips_chronologically(clips)
+        assert [r[1]["upload_date"] for r in result] == ["20240315", "20240315"]
+
+
 # ── get_video_duration ────────────────────────────────────────────────────────
 
 class TestGetVideoDuration:

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem \"C:\\\\Users\\\\steph\\\\.claude\\\\projects\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object Name, LastWriteTime)",
+      "Bash(Sort-Object LastWriteTime -Descending)",
+      "Bash(Select-Object -First 20)",
+      "Bash(find *)",
+      "Bash(awk '{print $5, $9}')",
+      "Bash(python3 *)"
+    ]
+  }
+}
