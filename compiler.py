@@ -64,11 +64,16 @@ log = logging.getLogger(__name__)
 
 TITLE_DISPLAY_DURATION = 2.0
 TRANSITION_DURATION = 0.5
-TARGET_WIDTH = 1280
-TARGET_HEIGHT = 720
-TARGET_FPS = 30
+TARGET_WIDTH = 1920
+TARGET_HEIGHT = 1080
+TARGET_FPS = 60
 CRF = 23
 AUDIO_BITRATE = "128k"
+
+# Standard output tiers, highest first. Format detection picks the best tier
+# whose height/fps does not exceed what the source clips actually provide.
+RESOLUTION_TIERS: list[tuple[int, int]] = [(1920, 1080), (1280, 720), (854, 480), (640, 360)]
+FPS_TIERS: list[int] = [60, 30, 24, 15]
 
 # ── Signal handling ───────────────────────────────────────────────────────────
 
@@ -157,6 +162,57 @@ def get_video_duration(path: Path) -> float:
     return float(result.stdout.strip())
 
 
+def probe_clip_format(path: Path) -> tuple[int, int, float]:
+    """Return (width, height, fps) of the first video stream via ffprobe."""
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height,r_frame_rate",
+            "-of", "default=noprint_wrappers=1",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    data: dict[str, str] = {}
+    for line in result.stdout.strip().splitlines():
+        k, _, v = line.partition("=")
+        data[k.strip()] = v.strip()
+
+    w = int(data.get("width", TARGET_WIDTH))
+    h = int(data.get("height", TARGET_HEIGHT))
+    fps_raw = data.get("r_frame_rate", f"{TARGET_FPS}/1")
+    num, _, den = fps_raw.partition("/")
+    fps = int(num) / max(int(den), 1)
+    return w, h, fps
+
+
+def determine_output_format(clip_paths: list[Path]) -> tuple[int, int, int]:
+    """
+    Probe all clips and return the best (width, height, fps) for the compilation,
+    targeting 1920×1080@60 and falling back to the highest standard tier whose
+    height/fps does not exceed the maximum available across source clips.
+    """
+    max_h = 0
+    max_fps = 0.0
+    for p in clip_paths:
+        _, h, fps = probe_clip_format(p)
+        max_h = max(max_h, h)
+        max_fps = max(max_fps, fps)
+
+    out_w, out_h = next(
+        (t for t in RESOLUTION_TIERS if t[1] <= max_h),
+        RESOLUTION_TIERS[-1],
+    )
+    out_fps = next(
+        (f for f in FPS_TIERS if f <= round(max_fps)),
+        FPS_TIERS[-1],
+    )
+    return out_w, out_h, out_fps
+
+
 def sort_clips_chronologically(
     clip_data: list[tuple[Path, dict]],
 ) -> list[tuple[Path, dict]]:
@@ -241,9 +297,12 @@ def process_clip(
     date_str: Optional[str],
     font_path: Optional[str] = None,
     no_cache: bool = False,
+    target_width: int = TARGET_WIDTH,
+    target_height: int = TARGET_HEIGHT,
+    target_fps: int = TARGET_FPS,
 ) -> None:
     """
-    Normalize a clip to TARGET_WIDTH x TARGET_HEIGHT @ TARGET_FPS and overlay
+    Normalize a clip to target_width x target_height @ target_fps and overlay
     the title + date for the first TITLE_DISPLAY_DURATION seconds.
     Skips if output already exists and no_cache is False.
     """
@@ -269,9 +328,9 @@ def process_clip(
     enable = f"'lt(t,{TITLE_DISPLAY_DURATION})'"
 
     vf = ",".join([
-        f"scale={TARGET_WIDTH}:{TARGET_HEIGHT}:force_original_aspect_ratio=decrease",
-        f"pad={TARGET_WIDTH}:{TARGET_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black",
-        f"fps={TARGET_FPS}",
+        f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease",
+        f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:color=black",
+        f"fps={target_fps}",
         (
             f"drawtext={font_spec}"
             f":textfile='{title_path}'"
@@ -451,6 +510,14 @@ def main() -> None:
         log.info("Clips sorted chronologically: %s → %s",
                  format_date(first_date), format_date(last_date))
 
+    # Detect the best output format from the downloaded source clips.
+    if clip_data and not args.no_process:
+        raw_paths = [p for p, _ in clip_data]
+        out_w, out_h, out_fps = determine_output_format(raw_paths)
+        log.info("Output format: %dx%d @ %dfps", out_w, out_h, out_fps)
+    else:
+        out_w, out_h, out_fps = TARGET_WIDTH, TARGET_HEIGHT, TARGET_FPS
+
     # ── Phase 2: Process (parallel) ──────────────────────────────────────────
     processed_clips: list[Optional[Path]] = [None] * len(clip_data)
 
@@ -468,6 +535,7 @@ def main() -> None:
                     raw_path, out_path,
                     meta["title"], meta.get("upload_date"),
                     font_path, no_cache=args.no_cache,
+                    target_width=out_w, target_height=out_h, target_fps=out_fps,
                 )
                 return idx, out_path
             except Exception as e:

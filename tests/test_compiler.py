@@ -160,6 +160,85 @@ class TestWorkerCount:
             assert compiler.worker_count() >= 1
 
 
+# ── probe_clip_format ────────────────────────────────────────────────────────
+
+class TestProbeClipFormat:
+    def _mock_ffprobe(self, width: int, height: int, fps: str):
+        output = f"width={width}\nheight={height}\nr_frame_rate={fps}\n"
+        return mock.Mock(stdout=output, returncode=0)
+
+    def test_returns_width_height_fps(self):
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = self._mock_ffprobe(1920, 1080, "60/1")
+            w, h, fps = compiler.probe_clip_format(Path("clip.mp4"))
+        assert w == 1920
+        assert h == 1080
+        assert fps == pytest.approx(60.0)
+
+    def test_fractional_fps(self):
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = self._mock_ffprobe(1280, 720, "30000/1001")
+            _, _, fps = compiler.probe_clip_format(Path("clip.mp4"))
+        assert fps == pytest.approx(29.97, abs=0.01)
+
+    def test_calls_ffprobe_with_v_stream(self):
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = self._mock_ffprobe(1280, 720, "30/1")
+            compiler.probe_clip_format(Path("clip.mp4"))
+            cmd = mock_run.call_args[0][0]
+        assert cmd[0] == "ffprobe"
+        assert "-select_streams" in cmd
+
+
+# ── determine_output_format ───────────────────────────────────────────────────
+
+class TestDetermineOutputFormat:
+    def test_1080p60_clips_give_1080p60(self, tmp_path):
+        clips = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        for c in clips:
+            c.touch()
+        with mock.patch("compiler.probe_clip_format", return_value=(1920, 1080, 60.0)):
+            w, h, fps = compiler.determine_output_format(clips)
+        assert (w, h, fps) == (1920, 1080, 60)
+
+    def test_720p30_clips_give_720p30(self, tmp_path):
+        clips = [tmp_path / "a.mp4"]
+        clips[0].touch()
+        with mock.patch("compiler.probe_clip_format", return_value=(1280, 720, 30.0)):
+            w, h, fps = compiler.determine_output_format(clips)
+        assert (w, h, fps) == (1280, 720, 30)
+
+    def test_1080p_clips_cap_at_1080(self, tmp_path):
+        clips = [tmp_path / "a.mp4"]
+        clips[0].touch()
+        with mock.patch("compiler.probe_clip_format", return_value=(3840, 2160, 60.0)):
+            w, h, fps = compiler.determine_output_format(clips)
+        assert h == 1080
+
+    def test_mixed_clips_use_highest_available(self, tmp_path):
+        clips = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        for c in clips:
+            c.touch()
+        formats = [(1280, 720, 30.0), (1920, 1080, 60.0)]
+        with mock.patch("compiler.probe_clip_format", side_effect=formats):
+            w, h, fps = compiler.determine_output_format(clips)
+        assert (w, h, fps) == (1920, 1080, 60)
+
+    def test_ntsc_fps_rounds_to_30(self, tmp_path):
+        clips = [tmp_path / "a.mp4"]
+        clips[0].touch()
+        with mock.patch("compiler.probe_clip_format", return_value=(1280, 720, 29.97)):
+            _, _, fps = compiler.determine_output_format(clips)
+        assert fps == 30
+
+    def test_ntsc_60_fps_rounds_to_60(self, tmp_path):
+        clips = [tmp_path / "a.mp4"]
+        clips[0].touch()
+        with mock.patch("compiler.probe_clip_format", return_value=(1920, 1080, 59.94)):
+            _, _, fps = compiler.determine_output_format(clips)
+        assert fps == 60
+
+
 # ── get_video_duration ────────────────────────────────────────────────────────
 
 class TestGetVideoDuration:
